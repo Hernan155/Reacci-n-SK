@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>Reacción Skeet</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Reacción">
+<meta name="theme-color" content="#101814">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-512.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700;800&family=Barlow:wght@400;500;600&display=swap">
+<style>
+/* Una sola pantalla oscura tipo cancha al atardecer; el naranjo del platillo es la señal */
+:root{
+  --bg:#101814; --panel:#18231e; --line:#2a3832;
+  --fg:#e8e4d8; --muted:#8a978f;
+  --clay:#ff6a1a; --armed:#e9c46a; --ok:#7fc49b; --bad:#e76f51;
+  --display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
+  --body:"Barlow",system-ui,-apple-system,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:var(--body);
+  overscroll-behavior:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+body{display:flex;flex-direction:column;
+  padding:calc(env(safe-area-inset-top,0px) + 12px) 16px calc(env(safe-area-inset-bottom,0px) + 12px)}
+header{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+h1{font-family:var(--display);font-weight:800;font-size:1.5rem;letter-spacing:.04em;text-transform:uppercase;margin:0}
+h1 span{color:var(--clay)}
+.round{font-family:var(--display);font-size:1rem;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;font-variant-numeric:tabular-nums}
+
+#pad{flex:1;margin-block:14px;border-radius:22px;background:var(--panel);border:2px solid var(--line);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;
+  position:relative;overflow:hidden;cursor:pointer;touch-action:manipulation;transition:border-color .15s}
+#pad:focus-visible{outline:3px solid var(--armed);outline-offset:3px}
+#state{font-family:var(--display);font-weight:800;font-size:clamp(3rem,16vw,5.5rem);line-height:.9;
+  letter-spacing:.02em;text-transform:uppercase;text-wrap:balance}
+#hint{color:var(--muted);font-size:1rem;max-width:30ch;line-height:1.4}
+#big{font-family:var(--display);font-weight:700;font-size:clamp(2.4rem,12vw,4rem);font-variant-numeric:tabular-nums;min-height:1em}
+
+/* medidor de voz */
+.meter{position:absolute;left:18px;right:18px;bottom:18px;height:10px;border-radius:5px;background:var(--line);overflow:hidden}
+.meter i{position:absolute;inset:0 auto 0 0;width:0;background:var(--armed);transition:width .05s linear}
+.meter b{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--fg)}
+.meter-label{position:absolute;left:18px;bottom:32px;font-size:.75rem;color:var(--muted);letter-spacing:.08em;text-transform:uppercase}
+
+/* estados */
+#pad[data-s="armed"]{border-color:var(--armed)}
+#pad[data-s="armed"] #state{color:var(--armed)}
+#pad[data-s="wait"]{border-color:var(--armed)}
+#pad[data-s="signal"]{background:var(--clay);border-color:var(--clay)}
+#pad[data-s="signal"] #state,#pad[data-s="signal"] #hint,#pad[data-s="signal"] #big{color:#1a0d04}
+#pad[data-s="cool"] #big{color:var(--muted)}
+
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.stat small{display:block;font-size:.7rem;color:var(--muted);letter-spacing:.1em;text-transform:uppercase}
+.stat strong{font-family:var(--display);font-weight:700;font-size:1.6rem;font-variant-numeric:tabular-nums}
+.hist{display:flex;gap:6px;overflow-x:auto;margin-top:10px;min-height:28px;scrollbar-width:none}
+.hist span{flex:none;font-size:.85rem;font-variant-numeric:tabular-nums;padding:4px 9px;border-radius:999px;border:1px solid var(--line);color:var(--fg)}
+.hist span.fs{color:var(--bad);border-color:var(--bad)}
+
+.controls{display:flex;align-items:center;gap:12px;margin-top:12px;flex-wrap:wrap}
+.controls label{font-size:.85rem;color:var(--muted);flex:1;min-width:0;display:flex;align-items:center;gap:10px}
+input[type=range]{flex:1;min-width:0;accent-color:var(--armed)}
+button{font-family:var(--display);font-weight:700;font-size:1.05rem;letter-spacing:.06em;text-transform:uppercase;
+  background:transparent;color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:9px 16px;cursor:pointer}
+button:focus-visible{outline:2px solid var(--armed);outline-offset:2px}
+#stop[hidden]{display:none}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Reacción <span>Skeet</span></h1>
+  <div class="round" id="round">Serie 0</div>
+</header>
+
+<div id="pad" data-s="idle" role="button" tabindex="0" aria-live="polite">
+  <div id="state">Tocar</div>
+  <div id="big"></div>
+  <div id="hint">Toca para activar el micrófono. Luego di «¡Pull!» y el platillo sale entre 0 y 3 s después.</div>
+  <div class="meter-label">Voz</div>
+  <div class="meter"><i id="lvl"></i><b id="thr"></b></div>
+</div>
+
+<div class="stats">
+  <div class="stat"><small>Última</small><strong id="sLast">—</strong></div>
+  <div class="stat"><small>Promedio</small><strong id="sAvg">—</strong></div>
+  <div class="stat"><small>Mejor</small><strong id="sBest">—</strong></div>
+</div>
+<div class="hist" id="hist"></div>
+
+<div class="controls">
+  <label for="sens">Sensibilidad <input id="sens" type="range" min="-60" max="-10" step="1" value="-34"></label>
+  <button id="stop" hidden>Detener</button>
+  <button id="reset">Borrar</button>
+</div>
+
+<script>
+(()=>{
+const MAX_DELAY=3000, COOLDOWN=4000, REACT_WINDOW=2000, HOLD_FRAMES=3;
+const $=id=>document.getElementById(id);
+const pad=$('pad'), st=$('state'), big=$('big'), hint=$('hint');
+let ctx, analyser, buf, stream, raf, wakeLock;
+let state='idle', hold=0, signalAt=0, timers=[], rounds=0, reacted=false;
+let thrDb=-34, results=[];
+
+try{const s=JSON.parse(localStorage.getItem('rs-data')||'{}');
+  if(Array.isArray(s.results))results=s.results; if(typeof s.thr==='number')thrDb=s.thr;}catch(e){}
+$('sens').value=thrDb;
+const save=()=>{try{localStorage.setItem('rs-data',JSON.stringify({results:results.slice(-50),thr:thrDb}))}catch(e){}};
+
+const dbToPct=db=>Math.max(0,Math.min(100,(db+70)/65*100));
+const placeThr=()=>{$('thr').style.left=dbToPct(thrDb)+'%'};
+placeThr();
+$('sens').addEventListener('input',e=>{thrDb=+e.target.value;placeThr();save()});
+
+function set(s,title,b,h){state=s;pad.dataset.s=s;st.textContent=title;big.textContent=b||'';hint.textContent=h||''}
+function clearTimers(){timers.forEach(clearTimeout);timers=[]}
+function later(fn,ms){timers.push(setTimeout(fn,ms))}
+
+/* ---- sonido de máquina lanzadora (sintetizado) ---- */
+let noiseBuf;
+function noise(){
+  if(noiseBuf)return noiseBuf;
+  noiseBuf=ctx.createBuffer(1,ctx.sampleRate*0.6,ctx.sampleRate);
+  const d=noiseBuf.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;
+  return noiseBuf;
+}
+function launcherSound(){
+  const t=ctx.currentTime, out=ctx.createGain();out.gain.value=1;out.connect(ctx.destination);
+  // golpe del brazo: impacto grave
+  const o=ctx.createOscillator(),g=ctx.createGain();
+  o.type='sine';o.frequency.setValueAtTime(140,t);o.frequency.exponentialRampToValueAtTime(45,t+.18);
+  g.gain.setValueAtTime(1,t);g.gain.exponentialRampToValueAtTime(.001,t+.25);
+  o.connect(g).connect(out);o.start(t);o.stop(t+.3);
+  // clac metálico
+  const n1=ctx.createBufferSource(),bp=ctx.createBiquadFilter(),g1=ctx.createGain();
+  n1.buffer=noise();bp.type='bandpass';bp.frequency.value=2400;bp.Q.value=3;
+  g1.gain.setValueAtTime(1.4,t);g1.gain.exponentialRampToValueAtTime(.001,t+.09);
+  n1.connect(bp).connect(g1).connect(out);n1.start(t);n1.stop(t+.12);
+  // silbido del platillo saliendo
+  const n2=ctx.createBufferSource(),lp=ctx.createBiquadFilter(),g2=ctx.createGain();
+  n2.buffer=noise();lp.type='bandpass';lp.Q.value=1.2;
+  lp.frequency.setValueAtTime(500,t+.02);lp.frequency.exponentialRampToValueAtTime(3200,t+.4);
+  g2.gain.setValueAtTime(.0001,t);g2.gain.exponentialRampToValueAtTime(.5,t+.06);g2.gain.exponentialRampToValueAtTime(.001,t+.5);
+  n2.connect(lp).connect(g2).connect(out);n2.start(t);n2.stop(t+.55);
+}
+
+/* ---- micrófono ---- */
+async function start(){
+  try{
+    if(navigator.audioSession)try{navigator.audioSession.type='play-and-record'}catch(e){}
+    ctx=ctx||new (window.AudioContext||window.webkitAudioContext)();
+    await ctx.resume();
+    stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+    const src=ctx.createMediaStreamSource(stream);
+    analyser=ctx.createAnalyser();analyser.fftSize=1024;buf=new Float32Array(analyser.fftSize);
+    src.connect(analyser);
+    try{wakeLock=await navigator.wakeLock?.request('screen')}catch(e){}
+    $('stop').hidden=false;
+    arm();loop();
+  }catch(e){
+    set('idle','Sin micrófono','', 'No se pudo usar el micrófono. Revisa que la página esté abierta con https y que Safari tenga permiso de micrófono (Ajustes › Safari › Micrófono). Toca para reintentar.');
+  }
+}
+function stop(){
+  clearTimers();cancelAnimationFrame(raf);
+  stream?.getTracks().forEach(t=>t.stop());stream=null;
+  try{wakeLock?.release()}catch(e){} wakeLock=null;
+  $('lvl').style.width='0';$('stop').hidden=true;
+  set('idle','Tocar','','Toca para activar el micrófono. Luego di «¡Pull!» y el platillo sale entre 0 y 3 s después.');
+}
+function loop(){
+  analyser.getFloatTimeDomainData(buf);
+  let s=0;for(let i=0;i<buf.length;i++)s+=buf[i]*buf[i];
+  const db=20*Math.log10(Math.sqrt(s/buf.length)+1e-9);
+  $('lvl').style.width=dbToPct(db)+'%';
+  if(state==='armed'){hold=db>thrDb?hold+1:0; if(hold>=HOLD_FRAMES){hold=0;trigger()}}
+  raf=requestAnimationFrame(loop);
+}
+
+/* ---- ciclo ---- */
+function arm(){clearTimers();set('armed','Listo','', 'Di «¡Pull!»')}
+function trigger(){
+  rounds++;$('round').textContent='Serie '+rounds;
+  const delay=Math.random()*MAX_DELAY;
+  set('wait','…','', 'Espera la señal');
+  later(()=>fire(delay),delay);
+}
+function fire(delay){
+  signalAt=performance.now();reacted=false;
+  launcherSound();
+  set('signal','¡Ya!','', 'Toca la pantalla lo más rápido que puedas');
+  later(()=>{ if(!reacted){set('cool','Sin toque','', 'Retardo de la señal: '+(delay/1000).toFixed(2)+' s')} startCountdown(delay)}, REACT_WINDOW);
+}
+function startCountdown(delay){
+  const end=signalAt+COOLDOWN;
+  const tick=()=>{
+    const left=Math.max(0,end-performance.now());
+    if(state==='cool'||state==='signal'){ if(state==='signal')set('cool','Sin toque','', ''); big.textContent=(left/1000).toFixed(1)+' s'; }
+    if(left<=0)arm(); else later(tick,100);
+  };tick();
+}
+function tap(){
+  if(state==='idle'){start();return}
+  const now=performance.now();
+  if(state==='signal'&&!reacted){
+    reacted=true;const ms=Math.round(now-signalAt);
+    results.push(ms);save();render();
+    set('cool',ms+' ms','', 'Rearmando…');
+    // el conteo de 4 s sigue corriendo desde la señal
+    clearTimers();
+    const end=signalAt+COOLDOWN;
+    const tick=()=>{const left=Math.max(0,end-performance.now());
+      hint.textContent='Rearmando en '+(left/1000).toFixed(1)+' s';
+      if(left<=0)arm(); else later(tick,100)};tick();
+  }else if(state==='wait'){
+    clearTimers();results.push(-1);save();render();
+    set('cool','Adelantado','', 'Tocaste antes de la señal');
+    const end=now+COOLDOWN;
+    const tick=()=>{const left=Math.max(0,end-performance.now());
+      big.textContent=(left/1000).toFixed(1)+' s';if(left<=0)arm();else later(tick,100)};tick();
+  }
+}
+pad.addEventListener('pointerdown',e=>{e.preventDefault();tap()});
+pad.addEventListener('keydown',e=>{if(e.key===' '||e.key==='Enter'){e.preventDefault();tap()}});
+$('stop').addEventListener('click',stop);
+$('reset').addEventListener('click',()=>{results=[];save();render()});
+document.addEventListener('visibilitychange',async()=>{
+  if(document.visibilityState==='visible'&&stream){try{wakeLock=await navigator.wakeLock?.request('screen')}catch(e){} ctx?.resume()}
+});
+
+function render(){
+  const ok=results.filter(r=>r>=0);
+  const last=results[results.length-1];
+  $('sLast').textContent=last==null?'—':last<0?'Adel.':last+' ms';
+  $('sAvg').textContent=ok.length?Math.round(ok.reduce((a,b)=>a+b,0)/ok.length)+' ms':'—';
+  $('sBest').textContent=ok.length?Math.min(...ok)+' ms':'—';
+  const h=$('hist');h.innerHTML='';
+  results.slice(-20).reverse().forEach(r=>{const s=document.createElement('span');
+    if(r<0){s.className='fs';s.textContent='Adelantado'}else s.textContent=r+' ms';h.appendChild(s)});
+}
+render();
+})();
+</script>
+</body>
+</html>
